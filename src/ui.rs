@@ -478,11 +478,13 @@ fn highlighted_line_with_style<'a>(
 /// Hard-wrap one styled line into rows of at most `width` display columns,
 /// preserving span styles across the split points. Char-accurate via
 /// `unicode-width` (a double-width char never straddles a row boundary).
+/// The line-level style (e.g. Highlight-mode dimming) is carried onto every row.
 fn wrap_line(line: UiLine<'_>, width: usize) -> Vec<UiLine<'_>> {
     use unicode_width::UnicodeWidthChar;
     if width == 0 {
         return vec![line];
     }
+    let line_style = line.style;
     let mut rows = Vec::new();
     let mut cur: Vec<Span> = Vec::new();
     let mut cur_w = 0usize;
@@ -496,7 +498,7 @@ fn wrap_line(line: UiLine<'_>, width: usize) -> Vec<UiLine<'_>> {
                 if idx > chunk_start {
                     cur.push(Span::styled(content[chunk_start..idx].to_owned(), style));
                 }
-                rows.push(UiLine::from(std::mem::take(&mut cur)));
+                rows.push(UiLine::from(std::mem::take(&mut cur)).style(line_style));
                 cur_w = 0;
                 chunk_start = idx;
             }
@@ -506,7 +508,7 @@ fn wrap_line(line: UiLine<'_>, width: usize) -> Vec<UiLine<'_>> {
             cur.push(Span::styled(content[chunk_start..].to_owned(), style));
         }
     }
-    rows.push(UiLine::from(cur));
+    rows.push(UiLine::from(cur).style(line_style));
     rows
 }
 
@@ -622,6 +624,15 @@ mod tests {
         // width 3: "ab" (2 cols) + 漢 (2 cols) doesn't fit -> 漢 starts row 2
         let rows = wrap_line(UiLine::raw("ab漢x"), 3);
         assert_eq!(row_texts(&rows), ["ab", "漢x"]);
+    }
+
+    #[test]
+    fn wrap_line_carries_line_style_onto_every_row() {
+        // Highlight-mode dimming of plain lines is a line-level style.
+        let dim = Style::new().add_modifier(Modifier::DIM);
+        let rows = wrap_line(UiLine::styled("abcdefghij", dim), 4);
+        assert_eq!(row_texts(&rows), ["abcd", "efgh", "ij"]);
+        assert!(rows.iter().all(|r| r.style == dim));
     }
 
     #[test]
